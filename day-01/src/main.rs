@@ -14,6 +14,9 @@ fn main() -> Result<(), String> {
     let password = rot_and_count_0(&instructions);
     println!("The password is '{password}'");
 
+    let password = clilb(&instructions);
+    println!("No wait, it is actually '{password}'");
+
     Ok(())
 }
 
@@ -24,6 +27,24 @@ fn rot_and_count_0(instructions: &[i32]) -> u32 {
     for inst in instructions {
         pos = (pos + inst).rem_euclid(100);
         if pos == 0 {
+            count += 1;
+        }
+    }
+    count
+}
+
+fn clilb(instructions: &[i32]) -> u32 {
+    let mut count: u32 = 0;
+    let mut pos: i32 = 50;
+
+    for inst in instructions.iter().copied() {
+        count += (inst / 100).unsigned_abs();
+        let pos_orig = pos;
+        pos = (pos + inst).rem_euclid(100);
+        if pos_orig != 0
+            && ((inst > 0 && pos_orig > pos) || (inst < 0 && pos_orig < pos || pos == 0))
+        {
+            println!("from {pos_orig} to {pos}");
             count += 1;
         }
     }
@@ -50,4 +71,40 @@ fn parse_line(line: &str) -> Result<i32, String> {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    static EXAMPLE_INPUT: &str = r#"L68
+L30
+R48
+L5
+R60
+L55
+L1
+L99
+R14
+L82
+"#;
+
+    #[test]
+    fn glilb_works_for_example() {
+        // given
+        let instructions = parse_input(EXAMPLE_INPUT).expect("epected valid input");
+
+        // when
+        let password = clilb(&instructions);
+
+        // then
+        assert_eq!(password, 6);
+    }
+
+    #[test]
+    fn glilb_works_for_high_rotations() {
+        // given
+        let instructions = &[1050, -1050];
+
+        // when
+        let password = clilb(instructions);
+
+        // then
+        assert_eq!(password, 21);
+    }
 }
