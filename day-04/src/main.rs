@@ -14,6 +14,13 @@ fn main() -> Result<(), String> {
     let accessible_rolls = count_accessible_rolls(&warehouse);
     println!("{accessible_rolls} rolls of paper can be accessed by a forklift");
 
+    let original_rolls = warehouse.tiles.iter().filter(|tile| **tile).count();
+    let leftover_rolls = remove_rolls(warehouse);
+    println!(
+        "{} rolls of paper can be removed",
+        original_rolls - leftover_rolls
+    );
+
     Ok(())
 }
 
@@ -29,6 +36,22 @@ fn count_accessible_rolls(warehouse: &Warehouse) -> usize {
             warehouse.count_neighbours(x, y) < 4
         })
         .count()
+}
+
+fn remove_rolls(mut warehouse: Warehouse) -> usize {
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for i in 0..warehouse.tiles.len() {
+            let x = i % warehouse.width;
+            let y = i / warehouse.width;
+            if warehouse.tiles[i] && warehouse.count_neighbours(x, y) < 4 {
+                warehouse.tiles[i] = false;
+                changed = true;
+            }
+        }
+    }
+    warehouse.tiles.iter().filter(|tile| **tile).count()
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
