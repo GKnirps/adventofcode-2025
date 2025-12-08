@@ -15,7 +15,59 @@ fn main() -> Result<(), String> {
     let three_circ_product = three_largest_circuits(&junction_boxes, 1000);
     println!("the product of the size of the three largest circuits is {three_circ_product}");
 
+    if let Some(all_connected_product) = connect_all(&junction_boxes) {
+        println!(
+            "The product of x coordinates of the last boxes I need to connect is {all_connected_product}"
+        );
+    } else {
+        println!("I could not connect all boxes. This is a bug in the code.");
+    }
+
     Ok(())
+}
+
+fn connect_all(junction_boxes: &[Pos]) -> Option<u64> {
+    let distances = calc_distances(junction_boxes);
+    // there are more efficient ways to do this, but this is simpler for now
+    let mut circuits: Vec<HashSet<Pos>> = Vec::with_capacity(junction_boxes.len());
+    for Connection {
+        a,
+        b,
+        distance_sq: _,
+    } in distances
+    {
+        let ai = circuits
+            .iter()
+            .enumerate()
+            .find(|(_, c)| c.contains(&a))
+            .map(|(i, _)| i);
+        let bi = circuits
+            .iter()
+            .enumerate()
+            .find(|(_, c)| c.contains(&b))
+            .map(|(i, _)| i);
+        match (ai, bi) {
+            (Some(ai), Some(bi)) => {
+                if let Ok([circ_a, circ_b]) = circuits.get_disjoint_mut([ai, bi]) {
+                    circ_a.extend(circ_b.iter());
+                    circuits.swap_remove(bi);
+                }
+            }
+            (Some(ai), None) => {
+                circuits[ai].insert(b);
+            }
+            (None, Some(bi)) => {
+                circuits[bi].insert(a);
+            }
+            (None, None) => {
+                circuits.push(HashSet::from([a, b]));
+            }
+        }
+        if circuits.iter().any(|c| c.len() == junction_boxes.len()) {
+            return Some(a.0 * b.0);
+        }
+    }
+    None
 }
 
 fn three_largest_circuits(junction_boxes: &[Pos], n_pairs: usize) -> usize {
@@ -153,5 +205,17 @@ mod test {
 
         // then
         assert_eq!(result, 40);
+    }
+
+    #[test]
+    fn connect_all_works_for_example() {
+        // given
+        let boxes = parse(EXAMPLE_INPUT).expect("expected valid input");
+
+        // when
+        let result = connect_all(&boxes);
+
+        // then
+        assert_eq!(result, Some(25272));
     }
 }
