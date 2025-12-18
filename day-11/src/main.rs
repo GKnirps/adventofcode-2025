@@ -3,6 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs::read_to_string;
+use std::ops::AddAssign;
 use std::path::Path;
 
 fn main() -> Result<(), String> {
@@ -15,11 +16,68 @@ fn main() -> Result<(), String> {
     let n_paths = paths_from_you_to_out(&edges)?;
     println!("There are {n_paths} paths from 'you' to 'out'");
 
+    let n_paths = paths_from_svr_to_out_over_dac_and_fft(&edges)?;
+    println!("There are {n_paths} paths from 'svr' to 'out'");
+
     Ok(())
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, Default, Debug)]
+struct Count {
+    no: u64,
+    dac: u64,
+    fft: u64,
+    both: u64,
+}
+
+impl AddAssign for Count {
+    fn add_assign(&mut self, rhs: Self) {
+        self.no += rhs.no;
+        self.dac += rhs.dac;
+        self.fft += rhs.fft;
+        self.both += rhs.both;
+    }
+}
+
+fn paths_from_svr_to_out_over_dac_and_fft(
+    edges: &HashMap<&str, Box<[&str]>>,
+) -> Result<u64, String> {
+    let sorted_vertices = sort_vertices(edges, "svr")?;
+    let mut paths: HashMap<&str, Count> = HashMap::with_capacity(sorted_vertices.len());
+    paths.insert(
+        "svr",
+        Count {
+            no: 1,
+            dac: 0,
+            fft: 0,
+            both: 0,
+        },
+    );
+    for v in sorted_vertices {
+        let count = paths.get(v).copied().unwrap_or_else(Count::default);
+        for to in edges.get(v).iter().flat_map(|v| v.iter()) {
+            *paths.entry(to).or_default() += match *to {
+                "fft" => Count {
+                    no: 0,
+                    dac: 0,
+                    fft: count.no + count.fft,
+                    both: count.both + count.dac,
+                },
+                "dac" => Count {
+                    no: 0,
+                    fft: 0,
+                    dac: count.no + count.dac,
+                    both: count.both + count.fft,
+                },
+                _ => count,
+            };
+        }
+    }
+    Ok(paths.get("out").map(|c| c.both).unwrap_or(0))
+}
+
 fn paths_from_you_to_out(edges: &HashMap<&str, Box<[&str]>>) -> Result<u64, String> {
-    let sorted_vertices = sort_vertices(edges)?;
+    let sorted_vertices = sort_vertices(edges, "you")?;
     let mut paths: HashMap<&str, u64> = HashMap::with_capacity(sorted_vertices.len());
     paths.insert("you", 1);
     for v in sorted_vertices {
@@ -31,18 +89,21 @@ fn paths_from_you_to_out(edges: &HashMap<&str, Box<[&str]>>) -> Result<u64, Stri
     Ok(paths.get("out").copied().unwrap_or(0))
 }
 
-fn sort_vertices<'v>(edges: &HashMap<&'v str, Box<[&'v str]>>) -> Result<Vec<&'v str>, String> {
-    // first: make sure we only consider vertices that can be reached from "you"
+fn sort_vertices<'v>(
+    edges: &HashMap<&'v str, Box<[&'v str]>>,
+    start: &'static str,
+) -> Result<Vec<&'v str>, String> {
+    // first: make sure we only consider vertices that can be reached from start
     let mut vertices: HashSet<&str> = HashSet::with_capacity(edges.len() + 1);
     let mut stack: Vec<&str> = Vec::with_capacity(edges.len());
-    stack.push("you");
+    stack.push(start);
     while let Some(v) = stack.pop() {
         if vertices.contains(v) {
             continue;
         }
         vertices.insert(v);
         for next_v in edges.get(v).iter().flat_map(|to| to.iter()) {
-            if *next_v == "you" {
+            if *next_v == start {
                 return Err("there is a loop to 'you'".to_string());
             }
             stack.push(next_v);
@@ -51,7 +112,7 @@ fn sort_vertices<'v>(edges: &HashMap<&'v str, Box<[&'v str]>>) -> Result<Vec<&'v
     let vertices = vertices;
 
     let mut incoming_count: HashMap<&str, usize> = HashMap::with_capacity(edges.len());
-    incoming_count.insert("you", 0);
+    incoming_count.insert(start, 0);
     for to in edges
         .iter()
         .filter(|(v, _)| vertices.contains(*v))
@@ -79,7 +140,7 @@ fn sort_vertices<'v>(edges: &HashMap<&'v str, Box<[&'v str]>>) -> Result<Vec<&'v
             return Err("there is a cycle in the graph, this won't work".to_string());
         }
     }
-    if sorted.first() != Some(&"you") {
+    if sorted.first() != Some(&start) {
         Err("someting went wrong during sorting".to_string())
     } else {
         Ok(sorted)
@@ -103,7 +164,7 @@ fn parse(input: &str) -> Result<HashMap<&str, Box<[&str]>>, String> {
 mod test {
     use super::*;
 
-    static EXAMPLE_INPUT: &str = r#"aaa: you hhh
+    static EXAMPLE_INPUT_1: &str = r#"aaa: you hhh
 you: bbb ccc
 bbb: ddd eee
 ccc: ddd eee fff
@@ -114,14 +175,28 @@ ggg: out
 hhh: ccc fff iii
 iii: out
 "#;
+    static EXAMPLE_INPUT_2: &str = r#"svr: aaa bbb
+aaa: fft
+fft: ccc
+bbb: tty
+tty: ccc
+ccc: ddd eee
+ddd: hub
+hub: fff
+eee: dac
+dac: fff
+fff: ggg hhh
+ggg: out
+hhh: out
+"#;
 
     #[test]
     fn sort_vertices_works_for_example() {
         // given
-        let edges = parse(EXAMPLE_INPUT).expect("expected valid input");
+        let edges = parse(EXAMPLE_INPUT_1).expect("expected valid input");
 
         // when
-        let result = sort_vertices(&edges);
+        let result = sort_vertices(&edges, "you");
 
         // then
         let vertices = result.expect("expected successful sorting");
@@ -133,12 +208,24 @@ iii: out
     #[test]
     fn paths_from_you_to_out_works_for_example() {
         // given
-        let edges = parse(EXAMPLE_INPUT).expect("expected valid input");
+        let edges = parse(EXAMPLE_INPUT_1).expect("expected valid input");
 
         // when
         let n = paths_from_you_to_out(&edges);
 
         // then
         assert_eq!(n, Ok(5));
+    }
+
+    #[test]
+    fn paths_from_svr_to_out_over_dac_and_fft_works_for_example() {
+        // given
+        let edges = parse(EXAMPLE_INPUT_2).expect("expected valid input");
+
+        // when
+        let n = paths_from_svr_to_out_over_dac_and_fft(&edges);
+
+        // then
+        assert_eq!(n, Ok(2));
     }
 }
